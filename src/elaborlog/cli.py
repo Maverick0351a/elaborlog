@@ -17,6 +17,7 @@ from .score import InfoModel
 from .templates import set_custom_replacers
 import re
 from .tail import tail
+from .sinks import JsonlSink, MultiSink, AlertSink
 from .quantiles import P2Quantile
 from .service import build_app
 
@@ -337,13 +338,14 @@ def cmd_tail(args: argparse.Namespace) -> int:
             p2 = P2Quantile(q=quantile)
     line_idx = 0
     manual_threshold = args.threshold
-    jsonl_handle = None
+    # Build sinks (currently only JSONL sink optional)
+    sink: Optional[AlertSink] = None
     if getattr(args, "jsonl", None):
         try:
-            jsonl_handle = open(args.jsonl, "a", encoding="utf-8")
+            sink = JsonlSink(args.jsonl, all_token_contributors=getattr(args, "all_token_contributors", False))
         except Exception as exc:  # noqa: BLE001
             print(f"[elaborlog] could not open JSONL file {args.jsonl}: {exc}", file=sys.stderr)
-            jsonl_handle = None
+            sink = None
 
     console = _maybe_console(args)
 
@@ -492,7 +494,7 @@ def cmd_tail(args: argparse.Namespace) -> int:
                         console.print(_Text(detail, style="dim"))
                 else:
                     print(f"{header}{nn_text}\n{detail}")
-                if jsonl_handle is not None:
+                if sink is not None:
                     raw_token_details = model.token_surprisals(sc.toks)
                     token_details = raw_token_details if getattr(args, "all_token_contributors", False) else raw_token_details[:10]
                     quantile_estimates: Optional[Dict[str, float]] = None
@@ -529,10 +531,9 @@ def cmd_tail(args: argparse.Namespace) -> int:
                         ],
                     }
                     try:
-                        jsonl_handle.write(json.dumps(alert_obj) + "\n")
-                        jsonl_handle.flush()
+                        sink.emit(alert_obj)
                     except Exception as wexc:  # noqa: BLE001
-                        print(f"[elaborlog] failed to write JSONL alert: {wexc}", file=sys.stderr)
+                        print(f"[elaborlog] failed to write alert via sink: {wexc}", file=sys.stderr)
                 alerts_emitted += 1
 
             # Periodic stats: observed alert rate vs target quantile
@@ -566,10 +567,10 @@ def cmd_tail(args: argparse.Namespace) -> int:
             stop_event.set()
         if snapshot_thread is not None:
             snapshot_thread.join(timeout=0.1)
-        if jsonl_handle is not None:
+        if sink is not None:
             try:
-                jsonl_handle.close()
-            except Exception:  # noqa: BLE001
+                sink.close()
+            except Exception:
                 pass
         # Final stats emission (even if interval not elapsed) when enabled
         if getattr(args, "stats_interval", None):
