@@ -6,7 +6,7 @@ This keeps the core library dependency-light.
 from __future__ import annotations
 
 import threading
-from typing import Dict, List, Optional
+from typing import Optional  # use built-in generics for list/dict
 
 try:  # pragma: no cover - optional dependency
     from fastapi import FastAPI
@@ -53,14 +53,16 @@ class StatsResponse(BaseModel):
 def build_app(model: Optional[InfoModel] = None) -> FastAPI:
     model = model or InfoModel()
     app = FastAPI(title="Elaborlog Service", version="0.1.0")
+    # Single lock protecting all mutable model state; FastAPI handlers are lightweight so
+    # coarse-grained locking keeps thread-safety simple without visible contention.
     lock = threading.Lock()
 
     @app.get("/healthz")
-    def health() -> Dict[str, str]:  # pragma: no cover - trivial
+    def health() -> dict[str, str]:  # pragma: no cover - trivial
         return {"status": "ok"}
 
     @app.post("/observe")
-    def observe(req: ObserveRequest) -> Dict[str, str]:
+    def observe(req: ObserveRequest) -> dict[str, str]:
         with lock:
             _, _, msg = parse_line(req.line)
             model.observe(msg)
@@ -93,7 +95,7 @@ def build_app(model: Optional[InfoModel] = None) -> FastAPI:
             )
 
     @app.get("/metrics")
-    def metrics() -> Dict[str, object]:  # pragma: no cover - covered by dedicated test
+    def metrics() -> dict[str, object]:  # pragma: no cover - covered by dedicated test
         with lock:
             return model_metrics(model)
 

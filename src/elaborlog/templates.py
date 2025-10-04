@@ -1,8 +1,9 @@
 import re
-from typing import List, Tuple
+import sys
+from typing import Tuple  # List not needed with PEP 585 generics
 
 # Precompiled patterns and replacement tokens in a fixed order (order matters for specificity)
-_REPLACERS: List[Tuple[re.Pattern[str], str]] = [
+_REPLACERS: list[Tuple[re.Pattern[str], str]] = [
     (re.compile(r"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\b"), "<ts>"),
     (
         re.compile(
@@ -29,11 +30,11 @@ _REPLACERS: List[Tuple[re.Pattern[str], str]] = [
 # We keep them module-global so both scoring model and lightweight commands
 # (like 'cluster') see the same behavior without needing to thread config
 # everywhere. The CLI resets these per invocation (process scoped).
-_CUSTOM_REPLACERS: List[Tuple[re.Pattern[str], str]] = []
+_CUSTOM_REPLACERS: list[Tuple[re.Pattern[str], str]] = []
 _CUSTOM_ORDER: str = "before"  # 'before' (default) or 'after'
 
 
-def set_custom_replacers(pairs: List[Tuple[re.Pattern[str], str]], order: str = "before") -> None:
+def set_custom_replacers(pairs: list[Tuple[re.Pattern[str], str]], order: str = "before") -> None:
     """Install custom replacers.
 
     Parameters
@@ -57,12 +58,12 @@ def clear_custom_replacers() -> None:
     _CUSTOM_ORDER = "before"
 
 
-def _apply(replacers: List[Tuple[re.Pattern[str], str]], text: str) -> str:
+def _apply(replacers: list[Tuple[re.Pattern[str], str]], text: str) -> str:
     for pattern, repl in replacers:
         try:
             text = pattern.sub(repl, text)
-        except Exception:  # pragma: no cover - defensive; regex failures rare
-            pass
+        except Exception as exc:  # pragma: no cover - defensive; regex failures rare
+            print(f"[elaborlog] warning: custom replacer failed: {exc}", file=sys.stderr)
     return text
 
 

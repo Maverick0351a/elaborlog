@@ -336,7 +336,8 @@ def cmd_tail(args: argparse.Namespace) -> int:
 
     console = _maybe_console(args)
 
-    # Periodic snapshot thread (optional)
+    # Periodic snapshot thread (optional) - mutation confined to model.save() which
+    # only reads counters & maps; InfoModel methods themselves handle internal state.
     stop_event: Optional[threading.Event] = None
     snapshot_thread: Optional[threading.Thread] = None
     interval = getattr(args, "snapshot_interval", None)

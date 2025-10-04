@@ -1,5 +1,5 @@
 import re
-from typing import List, Iterable
+from typing import Iterable  # List replaced by built-in list
 
 
 _WORD_RE = re.compile(r"[A-Za-z0-9_]+")
@@ -9,17 +9,17 @@ _CAMEL_SPLIT_RE = re.compile(
 )
 
 
-def _split_camel(token: str) -> List[str]:
+def _split_camel(token: str) -> list[str]:
     parts = _CAMEL_SPLIT_RE.split(token)
     if len(parts) <= 1:
         return [token]
     return [p for p in parts if p]
 
 
-def _augment_with_splits(base_tokens: List[str], split_camel: bool, split_dot: bool) -> List[str]:
+def _augment_with_splits(base_tokens: list[str], split_camel: bool, split_dot: bool) -> list[str]:
     if not split_camel and not split_dot:
         return base_tokens
-    augmented: List[str] = []
+    augmented: list[str] = []
     for tok in base_tokens:
         augmented.append(tok)
         # Dot splitting first (retain original always)
@@ -46,7 +46,7 @@ def tokens(
     include_bigrams: bool = False,
     split_camel: bool = False,
     split_dot: bool = False,
-) -> List[str]:
+) -> list[str]:
     """Tokenize a string with optional camelCase and dotted segmentation.
 
     Design choices:
@@ -58,7 +58,7 @@ def tokens(
     """
     lowered = text.lower()
     base = _WORD_RE.findall(lowered)
-    out: List[str] = []
+    out: list[str] = []
     seen = set()
 
     def _add(tok: str):
