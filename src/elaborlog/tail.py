@@ -1,9 +1,9 @@
 import os
 import time
-from typing import Iterator, Optional
+from typing import Iterator, Optional, Any
 
 
-def tail(path: str, follow: bool = True, sleep_s: float = 0.25, stop_event: Optional[object] = None) -> Iterator[str]:
+def tail(path: str, follow: bool = True, sleep_s: float = 0.25, stop_event: Optional[Any] = None) -> Iterator[str]:
     """Cross-platform tail with polling (no extra deps) plus rotation/truncation handling.
 
     Behavior:
@@ -13,7 +13,7 @@ def tail(path: str, follow: bool = True, sleep_s: float = 0.25, stop_event: Opti
       duplicate lines.
     - If the file temporarily disappears (rotation gap), it waits until it reappears.
     """
-    def _stat_or_none(p: str):
+    def _stat_or_none(p: str):  # type: ignore[no-untyped-def]
         try:
             return os.stat(p)
         except FileNotFoundError:

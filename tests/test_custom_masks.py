@@ -1,9 +1,10 @@
-import subprocess, sys, json, tempfile, textwrap, os, pathlib
+import json
+import subprocess
+import sys
 
 PYTHON = sys.executable
 
 def run_cli(args, input_text=None):
-    env = os.environ.copy()
     cmd = [PYTHON, "-m", "elaborlog.cli"] + args
     proc = subprocess.run(cmd, input=input_text, capture_output=True, text=True)
     return proc.returncode, proc.stdout, proc.stderr

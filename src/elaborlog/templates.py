@@ -1,5 +1,5 @@
 import re
-import sys
+from .logutil import get_logger
 from typing import Tuple  # List not needed with PEP 585 generics
 
 # Precompiled patterns and replacement tokens in a fixed order (order matters for specificity)
@@ -59,11 +59,12 @@ def clear_custom_replacers() -> None:
 
 
 def _apply(replacers: list[Tuple[re.Pattern[str], str]], text: str) -> str:
+    log = get_logger()
     for pattern, repl in replacers:
         try:
             text = pattern.sub(repl, text)
         except Exception as exc:  # pragma: no cover - defensive; regex failures rare
-            print(f"[elaborlog] warning: custom replacer failed: {exc}", file=sys.stderr)
+            log.warning("custom replacer failed: %s", exc)
     return text
 
 

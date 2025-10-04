@@ -1,4 +1,9 @@
-import sys, subprocess, json, time, socket, contextlib
+import contextlib
+import json
+import socket
+import subprocess
+import sys
+import time
 
 import pytest
 

@@ -1,7 +1,6 @@
 import os
-import sys
 import subprocess
-from pathlib import Path
+import sys
 
 
 def test_rank_no_color(tmp_path):

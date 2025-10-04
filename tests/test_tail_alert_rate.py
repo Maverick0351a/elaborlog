@@ -1,4 +1,9 @@
-import subprocess, sys, tempfile, time, textwrap, re, os
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import time
 
 
 def test_tail_alert_rate_stats():

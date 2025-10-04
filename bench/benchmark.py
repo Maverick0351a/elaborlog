@@ -44,7 +44,7 @@ def run(lines: Iterable[str], warm: int, measure: int) -> None:
         model.observe(msg)
     # Rebuild iterator for measurement phase if needed
     if isinstance(lines, list):
-        to_measure = lines[warm : warm + measure]
+        to_measure: Iterable[str] = lines[warm : warm + measure]
     else:
         # Regenerate synthetic if generator consumed
         to_measure = synthetic_lines(measure)

@@ -1,4 +1,8 @@
-import json, subprocess, sys, tempfile, os
+import json
+import os
+import subprocess
+import sys
+import tempfile
 
 try:
     import jsonschema  # type: ignore

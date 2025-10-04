@@ -1,4 +1,9 @@
-import json, subprocess, sys, tempfile, os, re
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import time
 
 try:
     import jsonschema  # type: ignore
@@ -16,15 +21,36 @@ def test_alert_schema_validates_basic_alert():
         with open(log, 'w', encoding='utf-8') as f:
             f.write('ERROR something bad happened code=42 user=7\n')
         jsonl = os.path.join(td, 'alerts.jsonl')
-        proc = subprocess.Popen([sys.executable, '-m', 'elaborlog.cli', 'tail', log, '--quantile', '0.5', '--burn-in', '0', '--jsonl', jsonl], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    # Use a direct threshold so alerts fire immediately.
+        proc = subprocess.Popen([
+            sys.executable,
+            '-m',
+            'elaborlog.cli',
+            'tail',
+            log,
+            '--threshold', '0.0',
+            '--burn-in', '0',
+            '--jsonl', jsonl,
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         try:
+            # Allow tail loop to start
+            time.sleep(0.3)
             # Append a few lines to trigger alerts
-            for i in range(5):
+            for i in range(8):
                 with open(log, 'a', encoding='utf-8') as f:
                     f.write(f'ERROR something bad happened code={40+i} user={7+i}\n')
-            # Give process time to emit
+                time.sleep(0.05)
+            # Poll for non-empty JSONL
+            deadline = time.time() + 3.0
+            while time.time() < deadline:
+                if os.path.exists(jsonl) and os.path.getsize(jsonl) > 0:
+                    break
+                time.sleep(0.1)
             proc.terminate()
-            proc.wait(timeout=3)
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                proc.kill()
         finally:
             if proc.poll() is None:
                 proc.kill()
@@ -33,6 +59,7 @@ def test_alert_schema_validates_basic_alert():
         schema = json.loads(open(schema_path, 'r', encoding='utf-8').read())
         validator = jsonschema.Draft202012Validator(schema)  # type: ignore
         # Validate first alert line
+        assert os.path.exists(jsonl), f"alerts jsonl file not created; stderr={proc.stderr.read() if proc.stderr else 'n/a'}"
         with open(jsonl, 'r', encoding='utf-8') as jf:
             line = jf.readline().strip()
             assert line, 'No alert JSON written'

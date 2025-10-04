@@ -16,7 +16,7 @@ __all__ = ["__version__"]
 _FALLBACK_VERSION = "0.2.1"  # MUST match pyproject.toml [project].version
 
 try:  # pragma: no cover - success path covered indirectly via CLI test
-	__version__ = _metadata.version("elaborlog")  # type: ignore[assignment]
+	__version__ = _metadata.version("elaborlog")
 except Exception:  # pragma: no cover - fallback exercised if metadata missing
 	__version__ = _FALLBACK_VERSION
 

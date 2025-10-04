@@ -1,6 +1,6 @@
 import json
 import re
-import sys
+from .logutil import get_logger
 from typing import Optional, Tuple
 
 # Very lightweight parser: try JSON logs first; fallback to naive parse
@@ -26,7 +26,7 @@ def parse_line(line: str) -> Tuple[Optional[str], Optional[str], str]:
             level = level if level in _LEVELS else None
             return ts, level, str(msg)
         except Exception as exc:  # pragma: no cover - defensive parse fallback
-            print(f"[elaborlog] warning: JSON parse failed: {exc}", file=sys.stderr)
+            get_logger().warning("JSON parse failed: %s", exc)
 
     # Naive parse: [LEVEL] or LEVEL:
     match = re.search(r"\b(CRITICAL|ERROR|WARN|WARNING|INFO|DEBUG|TRACE)\b", line)

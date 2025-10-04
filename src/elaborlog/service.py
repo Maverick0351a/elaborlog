@@ -6,7 +6,7 @@ This keeps the core library dependency-light.
 from __future__ import annotations
 
 import threading
-from typing import Optional  # use built-in generics for list/dict
+from typing import Optional  # use built-in generics; legacy Optional retained for clarity
 
 try:  # pragma: no cover - optional dependency
     from fastapi import FastAPI
@@ -39,7 +39,7 @@ class ScoreResponse(BaseModel):
     template_info: float
     level_bonus: float
     template: str
-    tokens: List[str]
+    tokens: list[str]
 
 
 class StatsResponse(BaseModel):

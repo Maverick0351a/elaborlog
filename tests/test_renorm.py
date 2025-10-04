@@ -1,4 +1,3 @@
-import math
 from elaborlog.score import InfoModel
 from elaborlog.config import ScoringConfig
 

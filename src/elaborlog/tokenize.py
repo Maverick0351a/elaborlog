@@ -1,5 +1,4 @@
 import re
-from typing import Iterable  # List replaced by built-in list
 
 
 _WORD_RE = re.compile(r"[A-Za-z0-9_]+")
@@ -29,7 +28,7 @@ def _augment_with_splits(base_tokens: list[str], split_camel: bool, split_dot: b
             if len(dot_parts) > 1:
                 pieces = dot_parts
         # Camel splitting on each piece (recursively but shallow)
-        final_parts: List[str] = []
+        final_parts: list[str] = []
         for p in pieces:
             if split_camel and len(p) <= 80:  # avoid pathological huge tokens
                 final_parts.extend(_split_camel(p))
@@ -61,7 +60,7 @@ def tokens(
     out: list[str] = []
     seen = set()
 
-    def _add(tok: str):
+    def _add(tok: str) -> None:
         if not tok:
             return
         if tok not in seen:

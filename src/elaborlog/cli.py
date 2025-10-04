@@ -5,8 +5,8 @@ import math
 import sys
 import threading
 import time
-from collections import deque
-from typing import Deque, Dict, List, Optional, Tuple, Union
+from collections import deque, Counter as _Counter
+from typing import Deque, Dict, List, Optional, Tuple, Union, Iterable, Any, TYPE_CHECKING, Callable
 
 from .config import ScoringConfig
 from . import __version__
@@ -18,12 +18,19 @@ from .tail import tail
 from .quantiles import P2Quantile
 from .service import build_app
 
-try:  # Optional rich import
-    from rich.console import Console  # type: ignore
-    from rich.text import Text  # type: ignore
-except Exception:  # noqa: BLE001
-    Console = None  # type: ignore
-    Text = None  # type: ignore
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from rich.console import Console as _Console
+    from rich.text import Text as _Text
+else:  # runtime optional import
+    try:  # noqa: SIM105
+        from rich.console import Console as _Console  # type: ignore
+        from rich.text import Text as _Text  # type: ignore
+    except Exception:  # noqa: BLE001
+        _Console = None  # type: ignore
+        _Text = None  # type: ignore
+
+ConsoleType = Optional["_Console"]
+TextType = Optional["_Text"]
 
 
 def _print_guardrail_summary(model: InfoModel) -> None:
@@ -119,7 +126,7 @@ def maybe_save_model(model: InfoModel, path: Optional[str]) -> None:
 
 def cmd_serve(args: argparse.Namespace) -> int:  # pragma: no cover - integration feature
     try:
-        import uvicorn  # type: ignore
+        import uvicorn
     except Exception:  # noqa: BLE001
         print("'serve' requires uvicorn. Install with `pip install elaborlog[server]`.", file=sys.stderr)
         return 2
@@ -130,7 +137,7 @@ def cmd_serve(args: argparse.Namespace) -> int:  # pragma: no cover - integratio
     # Periodic snapshot thread
     stop_flag = False
 
-    def _snapshot_loop():
+    def _snapshot_loop() -> None:
         while not stop_flag:
             time.sleep(max(5, args.interval))
             try:
@@ -141,7 +148,6 @@ def cmd_serve(args: argparse.Namespace) -> int:  # pragma: no cover - integratio
     import time
     import threading
 
-    t = None
     if getattr(args, "state_out", None):
         t = threading.Thread(target=_snapshot_loop, daemon=True)
         t.start()
@@ -194,13 +200,13 @@ def compute_quantile(values: Deque[float], q: float) -> float:
     return data[lower] + (data[upper] - data[lower]) * fraction
 
 
-def _maybe_console(args: argparse.Namespace):
+def _maybe_console(args: argparse.Namespace) -> ConsoleType:
     if getattr(args, "no_color", False):
         return None
-    if not Console:
+    if _Console is None:
         return None
     # force_terminal ensures ANSI codes even when output is being captured (for tests)
-    return Console(color_system="truecolor", stderr=False, force_terminal=True)
+    return _Console(color_system="truecolor", stderr=False, force_terminal=True)
 
 
 def _color_scale(novelty: float) -> str:
@@ -217,8 +223,8 @@ def _color_scale(novelty: float) -> str:
 
 def cmd_rank(args: argparse.Namespace) -> int:
     model = build_model(args)
-    rows = []
-    json_rows = [] if getattr(args, "json", None) else None
+    rows: List[Tuple[Optional[str], Optional[str], float, float, float, float, str, str]] = []
+    json_rows: Optional[List[Dict[str, Any]]] = [] if getattr(args, "json", None) else None
     console = _maybe_console(args)
     with open(args.file, "r", encoding="utf-8", errors="replace") as handle:
         for line in handle:
@@ -282,9 +288,9 @@ def cmd_rank(args: argparse.Namespace) -> int:
     else:
         top = rows[: args.top]
         for row in top:
-            if console:
+            if console is not None:
                 color = _color_scale(row[2])
-                text = Text()
+                text = _Text()
                 text.append(f"{row[0] or '-'} ", style="dim")
                 text.append(f"[{row[1] or '-'}] ", style="cyan")
                 text.append(f"novelty={row[2]:.3f} ", style=color)
@@ -316,7 +322,7 @@ def cmd_tail(args: argparse.Namespace) -> int:
     else:
         qs_clean = []
     use_p2 = getattr(args, "window", None) is None
-    scores = deque([], maxlen=window)
+    scores: Deque[float] = deque([], maxlen=window)
     p2: Optional[P2Quantile] = None
     p2_multi: List[P2Quantile] = []
     if use_p2:
@@ -347,7 +353,7 @@ def cmd_tail(args: argparse.Namespace) -> int:
             interval = float(interval)
             if interval > 0:
                 stop_event = threading.Event()
-                def _snap_loop():
+                def _snap_loop() -> None:
                     while not stop_event.is_set():
                         time.sleep(interval)
                         if stop_event.is_set():
@@ -435,8 +441,8 @@ def cmd_tail(args: argparse.Namespace) -> int:
                 tpl_prob = model.template_probability(sc.tpl)
                 # Use ASCII '~' instead of Unicode '≈' for wider console compatibility
                 detail = f"   template={sc.tpl} p~{tpl_prob:.5f}"
-                if console:
-                    header_text = Text()
+                if console is not None:
+                    header_text = _Text()
                     header_text.append(f"{ts or '-'} ", style="dim")
                     header_text.append(f"[{level or '-'}] ", style="cyan")
                     header_text.append(f"novelty={sc.novelty:.3f} ", style=_color_scale(sc.novelty))
@@ -455,8 +461,8 @@ def cmd_tail(args: argparse.Namespace) -> int:
                     header_text.append(msg.strip(), style="white")
                     console.print(header_text)
                     if nn_text:
-                        console.print(Text(nn_text, style="dim"))
-                    console.print(Text(detail, style="dim"))
+                        console.print(_Text(nn_text, style="dim"))
+                        console.print(_Text(detail, style="dim"))
                 else:
                     print(f"{header}{nn_text}\n{detail}")
                 if jsonl_handle is not None:
@@ -599,11 +605,9 @@ def cmd_explain(args: argparse.Namespace) -> int:
 
 
 def cmd_cluster(args: argparse.Namespace) -> int:
-    from collections import Counter
-
     from .templates import to_template
 
-    counter = Counter()
+    counter: _Counter[str] = _Counter()
     with open(args.file, "r", encoding="utf-8", errors="replace") as handle:
         for line in handle:
             _, _, msg = parse_line(line)
@@ -794,7 +798,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     def _cmd_bench(a: argparse.Namespace) -> int:  # pragma: no cover - covered via integration test
         try:
-            from bench.benchmark import run, synthetic_lines, iter_file  # type: ignore
+            from bench.benchmark import run, synthetic_lines, iter_file
         except Exception as exc:  # noqa: BLE001
             print(f"[elaborlog] bench harness import failed: {exc}", file=sys.stderr)
             return 2

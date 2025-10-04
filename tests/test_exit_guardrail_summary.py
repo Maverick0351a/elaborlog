@@ -1,6 +1,5 @@
-import sys
 import subprocess
-import textwrap
+import sys
 
 
 def _run(cmd):

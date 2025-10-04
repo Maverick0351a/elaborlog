@@ -1,4 +1,6 @@
-import subprocess, sys, re
+import re
+import subprocess
+import sys
 
 
 def test_cli_version_matches_package():

@@ -1,4 +1,6 @@
-import re, subprocess, sys
+import re
+import subprocess
+import sys
 
 def test_bench_subcommand_smoke():
     proc = subprocess.run([sys.executable, '-m', 'elaborlog.cli', 'bench', '--lines', '2000', '--warm', '200', '--measure', '500'], capture_output=True, text=True, timeout=30)

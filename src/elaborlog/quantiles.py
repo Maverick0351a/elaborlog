@@ -6,7 +6,7 @@ falls back to exact sample quantiles.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List
 
 
@@ -15,16 +15,17 @@ class P2Quantile:
     q: float  # target quantile in (0,1)
     _n: int = 0
     _initialized: bool = False
-    _heights: List[float] | None = None  # marker heights h[0..4]
-    _positions: List[int] | None = None  # marker positions n[0..4]
-    _desired: List[float] | None = None  # desired marker positions n'[0..4]
-    _incs: List[float] | None = None     # increments dn[0..4]
-    _buffer: List[float] | None = None   # initial sample buffer
+    # Marker storage (populated once 5 samples observed)
+    _heights: List[float] = field(default_factory=list)   # h[0..4]
+    _positions: List[int] = field(default_factory=list)   # n[0..4]
+    _desired: List[float] = field(default_factory=list)   # n'[0..4]
+    _incs: List[float] = field(default_factory=list)      # dn[0..4]
+    _buffer: List[float] = field(default_factory=list)    # initial 5-sample buffer
 
     def __post_init__(self) -> None:
         if not (0 < self.q < 1):  # pragma: no cover - guard
             raise ValueError("q must be in (0,1)")
-        self._buffer = []
+        # Lists already created by default_factory
 
     def update(self, x: float) -> None:
         """Observe one sample."""
@@ -39,13 +40,13 @@ class P2Quantile:
                 self._incs = [0.0, q/2, q, (1+q)/2, 1.0]
                 self._initialized = True
             return
-
         # Increment total count
         self._n += 1
-        h = self._heights  # type: ignore
-        n = self._positions  # type: ignore
-        nd = self._desired  # type: ignore
-        dn = self._incs  # type: ignore
+        # After initialization these lists are guaranteed sized 5
+        h = self._heights
+        n = self._positions
+        nd = self._desired
+        dn = self._incs
 
         # Find k: cell in which x falls and update boundary heights
         if x < h[0]:
@@ -92,7 +93,7 @@ class P2Quantile:
             hi = min(len(data)-1, lo+1)
             frac = idx - lo
             return data[lo] + (data[hi]-data[lo]) * frac
-        return self._heights[2]  # type: ignore
+        return self._heights[2]
 
     @staticmethod
     def _parabolic(i: int, d: int, h: List[float], n: List[int]) -> float:
