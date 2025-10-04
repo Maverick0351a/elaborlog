@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 import os
+import signal
 from collections import deque, Counter as _Counter
 from typing import Deque, Dict, List, Optional, Tuple, Union, Any, TYPE_CHECKING
 
@@ -372,6 +373,15 @@ def cmd_tail(args: argparse.Namespace) -> int:
     alerts_emitted = 0
     last_stats_time = time.time()
     stats_interval = getattr(args, "stats_interval", None)
+    # Install SIGTERM handler so external terminate() triggers cleanup & summary (Linux CI)
+    _old_sigterm = None
+    def _sigterm_handler(signum, frame):  # pragma: no cover - exercised indirectly
+        raise KeyboardInterrupt
+    try:
+        _old_sigterm = signal.signal(signal.SIGTERM, _sigterm_handler)
+    except Exception:  # pragma: no cover - signal may not be available
+        _old_sigterm = None
+
     try:
         follow_flag = not getattr(args, "no_follow", False)
         for line in tail(args.file, follow=follow_flag):
@@ -543,6 +553,12 @@ def cmd_tail(args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         print("[elaborlog] stopping tail (Ctrl-C)", file=sys.stderr)
     finally:
+        # Restore prior handler
+        if _old_sigterm is not None:
+            try:
+                signal.signal(signal.SIGTERM, _old_sigterm)
+            except Exception:  # pragma: no cover
+                pass
         if stop_event is not None:
             stop_event.set()
         if snapshot_thread is not None:
