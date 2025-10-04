@@ -35,25 +35,27 @@ ConsoleType = Optional["_Console"]
 TextType = Optional["_Text"]
 
 
-def _print_guardrail_summary(model: InfoModel) -> None:
-    """Emit guardrail counters summary to stderr if any counters are non-zero.
+def _print_guardrail_summary(model: InfoModel, force: bool = False) -> None:
+    """Emit guardrail counters summary to stderr.
 
-    Includes truncated line counts and current vocab sizes to help users tune
-    caps (max_line_length, max_tokens_per_line, max_tokens, max_templates).
+    If force=True, always emit a summary line (even if all counters zero). This
+    ensures consistent test expectations for abrupt termination (SIGTERM/Ctrl-C).
     """
     try:
-        if any(
+        emit = force or any(
             [
                 getattr(model, "lines_truncated", 0),
                 getattr(model, "lines_token_truncated", 0),
                 getattr(model, "lines_dropped", 0),
             ]
-        ):
+        )
+        if emit:
             print(
-                f"[elaborlog] summary: truncated_lines={model.lines_truncated} "
-                f"token_truncated_lines={model.lines_token_truncated} dropped_lines={model.lines_dropped} "
-                f"vocab_tokens={len(model.token_counts)} vocab_templates={len(model.template_counts)}",
+                f"[elaborlog] summary: truncated_lines={getattr(model, 'lines_truncated', 0)} "
+                f"token_truncated_lines={getattr(model, 'lines_token_truncated', 0)} dropped_lines={getattr(model, 'lines_dropped', 0)} "
+                f"vocab_tokens={len(getattr(model, 'token_counts', []))} vocab_templates={len(getattr(model, 'template_counts', []))}",
                 file=sys.stderr,
+                flush=True,
             )
     except Exception:  # noqa: BLE001 - never let summary crash the program
         pass
@@ -303,7 +305,7 @@ def cmd_rank(args: argparse.Namespace) -> int:
             else:
                 print(f"{row[0] or '-'} [{row[1] or '-'}] novelty={row[2]:.3f} score={row[3]:.3f}  {row[7]}")
     maybe_save_model(model, getattr(args, "state_out", None))
-    _print_guardrail_summary(model)
+    _print_guardrail_summary(model, force=True)
     return 0
 
 
@@ -579,7 +581,7 @@ def cmd_tail(args: argparse.Namespace) -> int:
                     flush=True,
                 )
         maybe_save_model(model, getattr(args, "state_out", None))
-        _print_guardrail_summary(model)
+    _print_guardrail_summary(model, force=True)
     return 0
 
 
@@ -649,7 +651,7 @@ def cmd_explain(args: argparse.Namespace) -> int:
         tpl_prob = model.template_probability(sc.tpl)
         print(f"Template: {sc.tpl} (p~{tpl_prob:.5f})")
     maybe_save_model(model, getattr(args, "state_out", None))
-    _print_guardrail_summary(model)
+    _print_guardrail_summary(model, force=True)
     return 0
 
 
