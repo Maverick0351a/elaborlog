@@ -258,6 +258,46 @@ Use this to alert when `renormalizations` spikes unexpectedly, or when vocabular
 
 A lightweight benchmark runs in CI (Python 3.11) and uploads `bench-result.json`. Treat early numbers as baselines; you can diff artifacts across commits to spot performance regressions.
 
+### Performance Regression Guard
+
+CI enforces a minimum throughput ratio vs. a committed baseline (`bench/baseline.json`). After each benchmark run we execute:
+
+```
+python scripts/check_benchmark.py --current bench-result.json --baseline bench/baseline.json --min-ratio 0.90
+```
+
+If current `lines_per_sec / baseline_lines_per_sec < 0.90`, the job fails, flagging a likely regression. Workflow for updating the baseline after an intentional improvement:
+
+1. Run a representative local benchmark (repeat 3–5×, take median).
+2. Edit `bench/baseline.json` with the new stable `lines_per_sec`.
+3. Commit and open a PR (include rationale: hardware, command, median, variance).
+
+Setting an initial baseline: the placeholder ships with `0` (always passes). Replace it once numbers stabilize on your primary CI runner.
+
+Tune sensitivity by adjusting `--min-ratio` (e.g. `0.95` for stricter, `0.85` for looser) in `.github/workflows/ci.yml`.
+
+### Static Type Checking
+
+Mypy runs in CI with a moderately strict profile:
+
+```
+[tool.mypy]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+no_implicit_optional = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+strict_equality = true
+```
+
+Local invocation:
+
+```
+mypy src
+```
+
+Adding new modules? Prefer explicit return types. If a dynamic construct defies precise typing, isolate it and add a narrow `# type: ignore[code]` with justification.
+
 ### Schema Refactor Note
 
 Schemas now employ `$defs` for `tokenContributor` and a timestamp pattern (subset RFC3339). Downstream generators can rely on stable contributor object shape.

@@ -92,6 +92,24 @@ jobs:
       - name: Regression check
         run: |
           python scripts/check_benchmark.py --current bench-result.json --baseline bench/baseline.json --min-ratio 0.90
+      - name: Benchmark summary
+        if: always()
+        run: |
+          echo "## Benchmark Result" >> $GITHUB_STEP_SUMMARY
+          if [ -f bench-result.json ]; then
+            LPS=$(python -c "import json;print(json.load(open('bench-result.json'))['lines_per_sec'])" 2>/dev/null || echo 'n/a')
+            echo "Lines/sec: $LPS" >> $GITHUB_STEP_SUMMARY
+            python scripts/check_benchmark.py --current bench-result.json --baseline bench/baseline.json --min-ratio 0.90 > bench-check.json || true
+            if [ -f bench-check.json ]; then
+              RATIO=$(python -c "import json;print(json.load(open('bench-check.json'))['ratio'])" 2>/dev/null || echo 'n/a')
+              MINR=$(python -c "import json;print(json.load(open('bench-check.json'))['min_ratio'])" 2>/dev/null || echo '0')
+              PASS=$(python -c "import json;print(json.load(open('bench-check.json'))['pass'])" 2>/dev/null || echo 'false')
+              echo "Ratio: $RATIO (min $MINR)" >> $GITHUB_STEP_SUMMARY
+              echo "Pass: $PASS" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "bench-result.json missing" >> $GITHUB_STEP_SUMMARY
+          fi
       - name: Upload benchmark artifact
         uses: actions/upload-artifact@v4
         with:
