@@ -373,6 +373,8 @@ def cmd_tail(args: argparse.Namespace) -> int:
             print("[elaborlog] invalid --snapshot-interval; ignoring", file=sys.stderr)
 
     alerts_emitted = 0
+    # Initialize last_stats_time such that we can emit a stats line quickly on startup
+    # (helps tests that run briefly) and still respect a positive interval.
     last_stats_time = time.time()
     stats_interval = getattr(args, "stats_interval", None)
     # Install SIGTERM handler so external terminate() triggers cleanup & summary (Linux CI)
@@ -537,19 +539,17 @@ def cmd_tail(args: argparse.Namespace) -> int:
             if stats_interval and stats_interval > 0:
                 now = time.time()
                 if now - last_stats_time >= stats_interval:
-                    if line_idx > 0:
-                        rate = alerts_emitted / line_idx
-                        # Use configured quantile even if still in burn-in
-                        target_q = (
-                            (p2_multi[-1].q if p2_multi else (qs_clean[-1] if (qs_clean and not use_p2) else quantile))
-                            if manual_threshold is None
-                            else None
-                        )
-                        print(
-                            f"[elaborlog] stats: lines={line_idx} alerts={alerts_emitted} observed_rate={rate:.4f} target_quantile={(target_q if target_q is not None else 0.0):.4f}",
-                            file=sys.stderr,
-                            flush=True,
-                        )
+                    # Always emit stats line even if zero lines processed (lines=0 alerts=0)
+                    rate = (alerts_emitted / line_idx) if line_idx > 0 else 0.0
+                    target_q = (
+                        (p2_multi[-1].q if p2_multi else (qs_clean[-1] if (qs_clean and not use_p2) else quantile))
+                        if manual_threshold is None else 0.0
+                    )
+                    print(
+                        f"[elaborlog] stats: lines={line_idx} alerts={alerts_emitted} observed_rate={rate:.4f} target_quantile={target_q:.4f}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
                     last_stats_time = now
 
             recent.append((sc.toks, line))
@@ -573,14 +573,17 @@ def cmd_tail(args: argparse.Namespace) -> int:
                 pass
         # Final stats emission (even if interval not elapsed) when enabled
         if getattr(args, "stats_interval", None):
-            if line_idx > 0 and manual_threshold is None:
-                target_q = (p2_multi[-1].q if p2_multi else (qs_clean[-1] if (qs_clean and not use_p2) else quantile))
-                rate = alerts_emitted / line_idx
-                print(
-                    f"[elaborlog] stats: lines={line_idx} alerts={alerts_emitted} observed_rate={rate:.4f} target_quantile={target_q:.4f}",
-                    file=sys.stderr,
-                    flush=True,
-                )
+            # Emit final stats line even if zero lines processed
+            target_q_final = (
+                (p2_multi[-1].q if p2_multi else (qs_clean[-1] if (qs_clean and not use_p2) else quantile))
+                if manual_threshold is None else 0.0
+            )
+            rate_final = (alerts_emitted / line_idx) if line_idx > 0 else 0.0
+            print(
+                f"[elaborlog] stats: lines={line_idx} alerts={alerts_emitted} observed_rate={rate_final:.4f} target_quantile={target_q_final:.4f}",
+                file=sys.stderr,
+                flush=True,
+            )
         maybe_save_model(model, getattr(args, "state_out", None))
     _print_guardrail_summary(model, force=True)
     return 0
