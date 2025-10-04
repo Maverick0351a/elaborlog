@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 """Streaming quantile estimation using the P² algorithm (Jain & Chlamtac, 1985).
 
 This keeps 5 markers for a single target quantile q. Memory O(1), update O(1).
 Suitable for high-percentile estimates (q >= ~0.9). For small sample sizes (<5) it
 falls back to exact sample quantiles.
 """
+
+from __future__ import annotations
 from dataclasses import dataclass
 from typing import List
 
