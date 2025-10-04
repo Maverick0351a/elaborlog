@@ -386,7 +386,8 @@ def cmd_tail(args: argparse.Namespace) -> int:
 
     try:
         follow_flag = not getattr(args, "no_follow", False)
-        for line in tail(args.file, follow=follow_flag):
+        start_at_end = manual_threshold is None  # if manual threshold set, process existing file contents too
+        for line in tail(args.file, follow=follow_flag, start_at_end=start_at_end):
             line_idx += 1
             ts, level, msg = parse_line(line)
             model.observe(msg)

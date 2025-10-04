@@ -3,7 +3,7 @@ import time
 from typing import Iterator, Optional, Any
 
 
-def tail(path: str, follow: bool = True, sleep_s: float = 0.25, stop_event: Optional[Any] = None) -> Iterator[str]:
+def tail(path: str, follow: bool = True, sleep_s: float = 0.25, stop_event: Optional[Any] = None, start_at_end: bool = True) -> Iterator[str]:
     """Cross-platform tail with polling (no extra deps) plus rotation/truncation handling.
 
     Behavior:
@@ -28,7 +28,7 @@ def tail(path: str, follow: bool = True, sleep_s: float = 0.25, stop_event: Opti
         return
 
     with open(path, "r", encoding="utf-8", errors="replace") as handle:
-        if follow:
+        if follow and start_at_end:
             # Start at end like traditional tail -f
             handle.seek(0, os.SEEK_END)
         else:
