@@ -5,8 +5,9 @@ import math
 import sys
 import threading
 import time
+import os
 from collections import deque, Counter as _Counter
-from typing import Deque, Dict, List, Optional, Tuple, Union, Iterable, Any, TYPE_CHECKING, Callable
+from typing import Deque, Dict, List, Optional, Tuple, Union, Any, TYPE_CHECKING
 
 from .config import ScoringConfig
 from . import __version__
@@ -232,7 +233,8 @@ def cmd_rank(args: argparse.Namespace) -> int:
             model.observe(msg)
             sc = model.score(msg, level=level)
             if json_rows is not None:
-                token_details = model.token_surprisals(sc.toks)[:10]
+                raw_token_details = model.token_surprisals(sc.toks)
+                token_details = raw_token_details if getattr(args, "all_token_contributors", False) else raw_token_details[:10]
                 json_rows.append(
                     {
                         "timestamp": ts,
@@ -371,7 +373,8 @@ def cmd_tail(args: argparse.Namespace) -> int:
     last_stats_time = time.time()
     stats_interval = getattr(args, "stats_interval", None)
     try:
-        for line in tail(args.file, follow=True):
+        follow_flag = not getattr(args, "no_follow", False)
+        for line in tail(args.file, follow=follow_flag):
             line_idx += 1
             ts, level, msg = parse_line(line)
             model.observe(msg)
@@ -402,9 +405,15 @@ def cmd_tail(args: argparse.Namespace) -> int:
                             threshold_value = p2.value()
                             should_alert = sc.novelty >= threshold_value
                 else:
+                    # Rolling window mode. Support multi-quantiles similarly to P2 multi.
                     if line_idx > burn_in and len(scores) >= min(window, 30):
-                        threshold_value = compute_quantile(scores, quantile)
-                        should_alert = sc.novelty >= threshold_value
+                        if qs_clean:
+                            thresholds = [compute_quantile(scores, qv) for qv in qs_clean]
+                            threshold_value = thresholds[-1]  # highest quantile threshold
+                            should_alert = sc.novelty >= threshold_value
+                        else:
+                            threshold_value = compute_quantile(scores, quantile)
+                            should_alert = sc.novelty >= threshold_value
 
             last_seen = template_last_seen.get(sc.tpl)
             template_last_seen[sc.tpl] = line_idx
@@ -418,7 +427,7 @@ def cmd_tail(args: argparse.Namespace) -> int:
                 nns.sort(key=lambda item: -item[0])
                 nn_text = ""
                 for sim, prev_line in nns[: cfg.nn_topk]:
-                    nn_text += f"\n   ↳ neighbor (sim={sim:.2f}): {prev_line.strip()}"
+                    nn_text += f"\n   -> neighbor (sim={sim:.2f}): {prev_line.strip()}"
 
                 header = f"{ts or '-'} [{level or '-'}] novelty={sc.novelty:.3f}"
                 if manual_threshold is None and threshold_value is not None:
@@ -428,14 +437,14 @@ def cmd_tail(args: argparse.Namespace) -> int:
                             est_parts = []
                             for est in p2_multi:
                                 est_parts.append(f"q{est.q:.3f}={est.value():.3f}")
-                            header += " (" + ",".join(est_parts) + f"; using≥{threshold_value:.3f})"
+                            header += " (" + ",".join(est_parts) + f"; using>={threshold_value:.3f})"
                         else:
-                            header += f" (q{quantile:.3f}@p2≥{threshold_value:.3f})"
+                            header += f" (q{quantile:.3f}@p2>={threshold_value:.3f})"
                     else:
-                        header += f" (q{quantile:.3f}@w{len(scores)}≥{threshold_value:.3f})"
+                        header += f" (q{quantile:.3f}@w{len(scores)}>={threshold_value:.3f})"
                 header += f" score={sc.score:.3f}"
                 if manual_threshold is not None and threshold_value is not None:
-                    header += f" (≥{threshold_value:.3f})"
+                    header += f" (>={threshold_value:.3f})"
                 header += f"  {msg.strip()}"
 
                 tpl_prob = model.template_probability(sc.tpl)
@@ -452,11 +461,14 @@ def cmd_tail(args: argparse.Namespace) -> int:
                                 est_parts = []
                                 for est in p2_multi:
                                     est_parts.append(f"q{est.q:.3f}={est.value():.3f}")
-                                header_text.append("(" + ",".join(est_parts) + f"; using≥{threshold_value:.3f}) ", style="dim")
+                                header_text.append("(" + ",".join(est_parts) + f"; using>={threshold_value:.3f}) ", style="dim")
                             else:
-                                header_text.append(f"(q{quantile:.3f}@p2≥{threshold_value:.3f}) ", style="dim")
+                                header_text.append(f"(q{quantile:.3f}@p2>={threshold_value:.3f}) ", style="dim")
                         else:
-                            header_text.append(f"(q{quantile:.3f}@w{len(scores)}≥{threshold_value:.3f}) ", style="dim")
+                            if qs_clean:
+                                header_text.append(f"(q{qs_clean[-1]:.3f}@w{len(scores)}>={threshold_value:.3f}) ", style="dim")
+                            else:
+                                header_text.append(f"(q{quantile:.3f}@w{len(scores)}>={threshold_value:.3f}) ", style="dim")
                     header_text.append(f"score={sc.score:.3f} ", style="magenta")
                     header_text.append(msg.strip(), style="white")
                     console.print(header_text)
@@ -466,7 +478,14 @@ def cmd_tail(args: argparse.Namespace) -> int:
                 else:
                     print(f"{header}{nn_text}\n{detail}")
                 if jsonl_handle is not None:
-                    token_details = model.token_surprisals(sc.toks)[:10]
+                    raw_token_details = model.token_surprisals(sc.toks)
+                    token_details = raw_token_details if getattr(args, "all_token_contributors", False) else raw_token_details[:10]
+                    quantile_estimates: Optional[Dict[str, float]] = None
+                    if getattr(args, "emit_intermediate", False) and (p2_multi or qs_clean):
+                        if p2_multi:
+                            quantile_estimates = {f"{est.q:.3f}": est.value() for est in p2_multi}
+                        elif qs_clean:
+                            quantile_estimates = {f"{qv:.3f}": compute_quantile(scores, qv) for qv in qs_clean}
                     alert_obj = {
                         "timestamp": ts,
                         "level": level,
@@ -484,7 +503,12 @@ def cmd_tail(args: argparse.Namespace) -> int:
                         ],
                         "line": msg.strip(),
                         "threshold": threshold_value,
-                        "quantile": (p2_multi[-1].q if p2_multi else quantile) if manual_threshold is None else None,
+                        "quantile": (
+                            (p2_multi[-1].q if p2_multi else (qs_clean[-1] if (qs_clean and not use_p2) else quantile))
+                            if manual_threshold is None
+                            else None
+                        ),
+                        "quantile_estimates": quantile_estimates,
                         "neighbors": [
                             {"similarity": sim, "line": prev.strip()} for sim, prev in nns[: cfg.nn_topk]
                         ],
@@ -503,7 +527,11 @@ def cmd_tail(args: argparse.Namespace) -> int:
                     if line_idx > 0:
                         rate = alerts_emitted / line_idx
                         # Use configured quantile even if still in burn-in
-                        target_q = (p2_multi[-1].q if p2_multi else quantile) if manual_threshold is None else None
+                        target_q = (
+                            (p2_multi[-1].q if p2_multi else (qs_clean[-1] if (qs_clean and not use_p2) else quantile))
+                            if manual_threshold is None
+                            else None
+                        )
                         print(
                             f"[elaborlog] stats: lines={line_idx} alerts={alerts_emitted} observed_rate={rate:.4f} target_quantile={(target_q if target_q is not None else 0.0):.4f}",
                             file=sys.stderr,
@@ -527,7 +555,7 @@ def cmd_tail(args: argparse.Namespace) -> int:
         # Final stats emission (even if interval not elapsed) when enabled
         if getattr(args, "stats_interval", None):
             if line_idx > 0 and manual_threshold is None:
-                target_q = (p2_multi[-1].q if p2_multi else quantile)
+                target_q = (p2_multi[-1].q if p2_multi else (qs_clean[-1] if (qs_clean and not use_p2) else quantile))
                 rate = alerts_emitted / line_idx
                 print(
                     f"[elaborlog] stats: lines={line_idx} alerts={alerts_emitted} observed_rate={rate:.4f} target_quantile={target_q:.4f}",
@@ -551,7 +579,12 @@ def cmd_explain(args: argparse.Namespace) -> int:
     _, level, msg = parse_line(args.line)
     sc = model.score(msg, level=level)
     if getattr(args, "json", None):
-        token_details = model.token_surprisals(sc.toks)[: args.top_tokens]
+        full_token_details = model.token_surprisals(sc.toks)
+        token_details = (
+            full_token_details
+            if getattr(args, "all_token_contributors", False)
+            else full_token_details[: args.top_tokens]
+        )
         obj = {
             "novelty": sc.novelty,
             "score": sc.score,
@@ -623,6 +656,88 @@ def cmd_demo(_: argparse.Namespace) -> int:
     return cmd_score(ns)
 
 
+def cmd_summarize(args: argparse.Namespace) -> int:
+    import statistics
+    # Read alerts JSONL
+    path = args.file
+    if not os.path.exists(path):
+        print(f"[elaborlog] alerts JSONL not found: {path}", file=sys.stderr)
+        return 2
+    lines: List[str] = []
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            lines.append(line)
+    if not lines:
+        print("[elaborlog] no alert lines found", file=sys.stderr)
+        return 0
+    alerts: List[Dict[str, Any]] = []
+    for line_str in lines:
+        try:
+            alerts.append(json.loads(line_str))
+        except Exception as exc:  # noqa: BLE001
+            print(f"[elaborlog] skipped malformed JSON line: {exc}", file=sys.stderr)
+    n = len(alerts)
+    novelties = [a.get("novelty", 0.0) for a in alerts]
+    scores = [a.get("score", 0.0) for a in alerts]
+    thresholds = [a.get("threshold") for a in alerts if a.get("threshold") is not None]
+    quantile = None
+    for a in alerts:
+        if a.get("quantile") is not None:
+            quantile = a.get("quantile")
+            break
+    template_counter: _Counter[str] = _Counter()
+    token_bits: _Counter[str] = _Counter()
+    for a in alerts:
+        tpl = a.get("template")
+        if tpl:
+            template_counter[tpl] += 1
+        # token_contributors may contain bits values
+        for tc in a.get("token_contributors", []):
+            tok = tc.get("token")
+            bits = tc.get("bits")
+            if isinstance(tok, str) and isinstance(bits, (int, float)):
+                token_bits[tok] += bits
+    summary: Dict[str, Any] = {
+        "alerts": n,
+        "quantile": quantile,
+        "novelty_min": min(novelties),
+        "novelty_max": max(novelties),
+        "novelty_mean": statistics.fmean(novelties) if novelties else 0.0,
+        "novelty_p50": statistics.median(novelties),
+        "score_mean": statistics.fmean(scores) if scores else 0.0,
+        "threshold_mean": statistics.fmean(thresholds) if thresholds else None,
+        "threshold_last": thresholds[-1] if thresholds else None,
+        "top_templates": template_counter.most_common(args.top_templates),
+        "top_tokens": token_bits.most_common(args.top_tokens),
+    }
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as oh:
+            json.dump(summary, oh, indent=2)
+        print(f"Wrote summary JSON to {args.out}")
+    else:
+        print(f"Alerts: {n}")
+        if quantile is not None:
+            print(f"Quantile (active): {quantile:.3f}")
+        print(
+            f"Novelty min={summary['novelty_min']:.3f} p50={summary['novelty_p50']:.3f} max={summary['novelty_max']:.3f} mean={summary['novelty_mean']:.3f}"
+        )
+        print(
+            f"Score mean={summary['score_mean']:.3f} threshold_mean={summary['threshold_mean'] if summary['threshold_mean'] is not None else 'n/a'}"
+        )
+        if summary["top_templates"]:
+            print("Top templates:")
+            for tpl, c in summary["top_templates"]:
+                print(f"  {c:5d} {tpl}")
+        if summary["top_tokens"]:
+            print("Top tokens by cumulative bits:")
+            for tok, bits in summary["top_tokens"]:
+                print(f"  {bits:7.2f} {tok}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="elaborlog", description="Surface rare, high-signal log lines.")
     # Global --version (argparse will exit 0 before validating subcommands)
@@ -645,6 +760,7 @@ def build_parser() -> argparse.ArgumentParser:
     score_parser.add_argument("--w-template", type=float, help="Override weight for template surprisal component")
     score_parser.add_argument("--w-level", type=float, help="Override weight for level bonus component")
     score_parser.add_argument("--json", help="Write full JSON results (array) to this path")
+    score_parser.add_argument("--all-token-contributors", action="store_true", help="Include all token contributors (no truncation) in JSON output")
     score_parser.add_argument("--state-in", help="Load model state from this JSON file before scoring")
     score_parser.add_argument("--state-out", help="Persist the updated model state to this JSON file")
     score_parser.add_argument("--decay", type=float, help="Per-line decay multiplier (e.g. 0.9999)")
@@ -669,6 +785,7 @@ def build_parser() -> argparse.ArgumentParser:
     rank_parser.add_argument("--w-template", type=float, help="Override weight for template surprisal component")
     rank_parser.add_argument("--w-level", type=float, help="Override weight for level bonus component")
     rank_parser.add_argument("--json", help="Write full JSON results (array) to this path")
+    rank_parser.add_argument("--all-token-contributors", action="store_true", help="Include all token contributors (no truncation) in JSON output")
     rank_parser.add_argument("--state-in", help="Load model state from this JSON file before scoring")
     rank_parser.add_argument("--state-out", help="Persist the updated model state to this JSON file")
     rank_parser.add_argument("--decay", type=float, help="Per-line decay multiplier (e.g. 0.9999)")
@@ -685,6 +802,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     tail_parser = sub.add_parser("tail", help="Tail a log and print only high-novelty lines with context")
     tail_parser.add_argument("file")
+    tail_parser.add_argument("--no-follow", action="store_true", help="Process existing file once and exit (do not wait for new lines)")
     tail_parser.add_argument("--quantile", type=float, help="Override the rolling novelty quantile [0,1)")
     tail_parser.add_argument(
         "--quantiles",
@@ -727,6 +845,12 @@ def build_parser() -> argparse.ArgumentParser:
     tail_parser.add_argument("--state-in", help="Resume model state from this JSON snapshot")
     tail_parser.add_argument("--state-out", help="Write model state to this JSON snapshot on exit")
     tail_parser.add_argument("--jsonl", help="Write JSON lines for each emitted alert to this file")
+    tail_parser.add_argument("--all-token-contributors", action="store_true", help="Include full token contributor list in JSONL alerts (instead of top 10)")
+    tail_parser.add_argument(
+        "--emit-intermediate",
+        action="store_true",
+        help="Include all individual quantile estimates in JSONL alerts (quantile_estimates map)",
+    )
     tail_parser.add_argument("--decay", type=float, help="Per-line decay multiplier (e.g. 0.9999)")
     tail_parser.add_argument("--decay-every", type=int, help="Apply decay multiplier every N lines")
     tail_parser.add_argument("--no-color", action="store_true", help="Disable colorized output even if rich present")
@@ -763,6 +887,7 @@ def build_parser() -> argparse.ArgumentParser:
     explain_parser.add_argument("--state-in", help="Load model state before priming with the file")
     explain_parser.add_argument("--state-out", help="Persist model state after priming")
     explain_parser.add_argument("--json", help="Write JSON explanation to this path")
+    explain_parser.add_argument("--all-token-contributors", action="store_true", help="Do not truncate token contributor list in JSON explanation")
     explain_parser.add_argument("--no-color", action="store_true", help="Disable color output (not used for JSON mode)")
     explain_parser.add_argument("--mask", action="append", help="Custom regex=replacement mask (repeatable)")
     explain_parser.add_argument(
@@ -788,6 +913,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     demo_parser = sub.add_parser("demo", help="Run the examples/app.log demo")
     demo_parser.set_defaults(func=cmd_demo)
+
+    summarize_parser = sub.add_parser("summarize", help="Summarize an alerts JSONL file (from tail)")
+    summarize_parser.add_argument("file", help="Path to alerts JSONL produced by tail --jsonl")
+    summarize_parser.add_argument("--top-templates", type=int, default=10, help="Number of top templates to show")
+    summarize_parser.add_argument("--top-tokens", type=int, default=10, help="Number of top tokens by bits to show")
+    summarize_parser.add_argument("--out", help="Optional path to write JSON summary (prints pretty text otherwise)")
+    summarize_parser.set_defaults(func=cmd_summarize)
 
     # Bench subcommand (lightweight wrapper around bench/benchmark.py)
     bench_parser = sub.add_parser("bench", help="Run a quick throughput benchmark (synthetic or file)")

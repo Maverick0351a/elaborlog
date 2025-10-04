@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is inspired by Keep a Changelog and adheres to semantic-ish versioning while pre-1.0.
 
+## [Unreleased]
+### Added
+- `--no-follow` flag for `tail` enabling deterministic one-shot processing (reads from beginning and exits at EOF).
+- Multi-quantile support extended to window mode (`--window` + `--quantiles`).
+- Documentation updates for one-shot mode, window multi-quantiles, and encoding notes.
+- `--emit-intermediate` flag to include per-quantile estimates (`quantile_estimates`) in JSONL alerts.
+- `--all-token-contributors` flag for `rank`, `score`, `tail`, and `explain` JSON output (disables contributor truncation).
+- New `summarize` subcommand to aggregate an alerts JSONL (alert counts, novelty & score stats, thresholds, top templates, top tokens).
+
+### Changed
+- Tail neighbor and threshold annotations now use ASCII (`>=`, `->`) for broader Windows console compatibility.
+- JSONL alert `quantile` field now reflects highest supplied quantile for both streaming (P²) and window modes.
+
+### Fixed
+- Hanging integration test scenario by adding `--no-follow` for CI use.
+- Windows `UnicodeEncodeError` on certain code pages due to ≥ and Unicode arrow glyph.
+
+### Migration Notes
+- If any downstream parsing relied on the old Unicode symbols (≥, ↳), update to the ASCII replacements (>=, ->).
+
 ## [0.2.1] - 2025-10-04
 ### Highlights
 Bench command, multi-quantile alerting, richer tokenization & masking, formal JSON schemas, coverage & stability tooling.

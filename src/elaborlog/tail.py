@@ -28,7 +28,12 @@ def tail(path: str, follow: bool = True, sleep_s: float = 0.25, stop_event: Opti
         return
 
     with open(path, "r", encoding="utf-8", errors="replace") as handle:
-        handle.seek(0, os.SEEK_END)
+        if follow:
+            # Start at end like traditional tail -f
+            handle.seek(0, os.SEEK_END)
+        else:
+            # One-shot mode: process entire existing file from beginning
+            handle.seek(0, os.SEEK_SET)
         position = handle.tell()
         orig_ino = getattr(st, "st_ino", None)
         open_ctime = getattr(st, "st_ctime", None)

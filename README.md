@@ -104,6 +104,39 @@ Structured single-line explanation:
 elaborlog explain prod.log --line "ERROR payment declined code=402 user=9922" --json explain.json
 ```
 
+Need the *full* token contributor list (not just top N) for deeper offline analysis? Add `--all-token-contributors` to `rank --json`, `score --json`, `tail --jsonl`, or `explain --json`.
+
+### Summarizing Alerts
+
+After collecting alerts with `tail --jsonl`, you can produce a compact statistical summary:
+
+```bash
+elaborlog summarize alerts.jsonl --out summary.json --top-templates 15 --top-tokens 15
+```
+
+Sample summary JSON keys:
+```
+{
+	"alerts": 234,
+	"quantile": 0.998,
+	"novelty_min": 0.742,
+	"novelty_max": 0.963,
+	"novelty_mean": 0.884,
+	"novelty_p50": 0.881,
+	"score_mean": 12.37,
+	"threshold_mean": 0.902,
+	"threshold_last": 0.905,
+	"top_templates": [[42, "ERROR payment declined code=<num> user=<num>"], ...],
+	"top_tokens": [[123.7, "declined"], ...]
+}
+```
+
+Use this to feed dashboards or compare regimes across deployments.
+
+### Micro Benchmark: Quantile Estimate Overhead
+
+An optional script (`scripts/bench_emit_intermediate.py`, added in dev extras) measures overhead of `--emit-intermediate` vs baseline tailing. Run it after installing dev deps to quantify impact when tracking many quantiles.
+
 ### Run as a lightweight service
 
 Install server extras and launch the HTTP API:
@@ -297,6 +330,100 @@ mypy src
 ```
 
 Adding new modules? Prefer explicit return types. If a dynamic construct defies precise typing, isolate it and add a narrow `# type: ignore[code]` with justification.
+
+### Streaming Quantiles (P²) & Multi-Quantile Tail Mode
+
+By default `tail` uses the **P² algorithm** (Jain & Chlamtac, 1985) to maintain a target high percentile of novelty in constant space (5 markers) and O(1) amortized update time. This avoids keeping a large rolling buffer and performing sorts.
+
+Key properties:
+- Memory: constant (5 marker heights, positions, desired positions, increments)
+- Update: a few arithmetic ops and conditional parabolic / linear adjustments
+- Convergence: Fast after initial 5-sample bootstrap and burn-in; statistically validated in `test_streaming_quantile_alert_rate`.
+- Early phase (<5 samples): falls back to exact interpolation of observed values.
+
+Use a fixed rolling window quantile instead by specifying `--window N`; this keeps the last N scores (memory O(N)) and computes quantiles via a partial sort.
+
+#### Multiple Quantiles
+
+Supply multiple quantiles to `tail` for stricter alerting and richer telemetry:
+
+```bash
+elaborlog tail prod.log --quantiles 0.99 0.995 0.998
+```
+
+Behavior:
+- Maintains one P² estimator per supplied quantile.
+- Determines the alert threshold using the **highest** quantile (strictest).
+- Prints all intermediate quantile estimates in alert lines for observability.
+- JSONL alerts contain the active quantile (`quantile` field) equal to the highest q.
+
+Example live alert line (color disabled, P² mode):
+```
+2025-10-04T12:00:00Z [ERROR] novelty=0.912 (q0.990=0.845,q0.995=0.872,q0.998=0.901; using>=0.901) score=13.442  ERROR payment declined code=402 user=9922
+	-> neighbor (sim=0.67): ERROR payment failed code=500 user=9911
+	template=ERROR payment declined code=<num> user=<num> p~0.00042
+```
+
+When should you use multi-quantile mode?
+- You want to monitor drift across several tail percentiles simultaneously.
+- You’re tuning which high percentile best balances volume vs. signal before fixing on one.
+
+Burn-in (`--burn-in`) still applies; no alerts are emitted until the specified number of lines passes (plus a minimum of 10 observations for numerical stability).
+
+Practical tips:
+- For very low traffic streams, prefer a rolling window (`--window`) so early estimates remain stable.
+- If novelty distribution shifts (deployment, traffic change), P² adapts without clearing history; optionally shorten burn-in if you snapshot & resume.
+
+#### Window Mode Multi-Quantiles
+
+If you provide both `--window` and multiple `--quantiles`, elaborlog now computes windowed quantiles for *each* q but still alerts only when exceeding the highest (strictest) one. Intermediate quantile estimates are displayed (and in color mode each is listed) so you can watch how the tail compresses.
+
+#### Deterministic One-Shot Processing: `--no-follow`
+
+Use `--no-follow` to process the existing file **from the beginning** exactly once and exit (ideal for CI and reproducible benchmarks):
+
+```bash
+elaborlog tail prod.log --quantiles 0.99 0.995 0.998 --no-follow --jsonl alerts.jsonl
+```
+
+Without `--no-follow`, tailing starts at end-of-file (like `tail -f`) and waits for new lines.
+
+If you also want every individual quantile estimate serialized for machine analysis, add `--emit-intermediate` to include a `quantile_estimates` object in each JSONL alert.
+
+#### ASCII-Only Output (Encoding Safety)
+
+To avoid `UnicodeEncodeError` on consoles lacking UTF-8 (e.g., some Windows code pages) threshold and neighbor glyphs were replaced with ASCII equivalents (`>=`, `->`). If you depended on the previous symbols, update parsers accordingly.
+
+#### JSONL Example (with `--emit-intermediate`)
+
+```jsonc
+{ "timestamp":"2025-10-04T12:00:00Z", "level":"ERROR", "novelty":0.912, "score":13.442,
+  "token_info_bits":9.12, "template_info_bits":3.02, "level_bonus":0.70,
+  "template":"ERROR payment declined code=<num> user=<num>",
+  "template_probability":0.00042,
+  "tokens":["error","payment","declined","code","402","user","9922"],
+  "token_contributors":[{"token":"declined","prob":0.05,"bits":4.30,"freq":1}],
+  "line":"ERROR payment declined code=402 user=9922",
+  "threshold":0.901,
+  "quantile":0.998,
+  "quantile_estimates": {"0.990":0.845, "0.995":0.872, "0.998":0.901},
+  "neighbors":[{"similarity":0.67,"line":"ERROR payment failed code=500 user=9911"}]
+}
+```
+
+### FAQ: Streaming (P²) vs Window
+
+| Aspect | Streaming P² | Rolling Window |
+|--------|---------------|----------------|
+| Memory | O(1) per quantile | O(W) scores |
+| Adaptation | Fast, smooth | Stepwise (window contents) |
+| Historical inertia | Retains long-tail influence (decayed) | Strictly last W lines |
+| Best for | Long-lived services, shifting distributions | Short batch analyses, low-volume logs |
+| Multi-quantiles | Independent P² markers per q | Recompute per q from deque |
+
+Heuristics:
+* Prefer P² for continuous streams or when memory is tight.
+* Prefer window when early-phase stability matters (small datasets / test fixtures) or you need exact quantiles over a bounded horizon.
 
 ### Schema Refactor Note
 

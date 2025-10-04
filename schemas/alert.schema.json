@@ -51,6 +51,11 @@
         },
         "additionalProperties": false
       }
+    },
+    "quantile_estimates": {
+      "type": ["object", "null"],
+      "description": "Map of quantile strings (e.g. '0.990') to estimated novelty thresholds for each requested quantile (present when --emit-intermediate used)",
+      "additionalProperties": { "type": "number", "minimum": 0 }
     }
   },
   "additionalProperties": false
