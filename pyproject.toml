@@ -4,13 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "elaborlog"
-version = "0.2.0"
+version = "0.2.1"
 description = "Surface rare, high-signal log lines and explain why they matter."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { file = "LICENSE" }
 authors = [{ name = "The World's Data Company", email = "hello@worlddatafilter.com" }]
 keywords = ["logs", "observability", "SRE", "ops", "incident-response", "cli"]
+
+[project.urls]
+Homepage = "https://github.com/Maverick0351a/elaborlog"
+Repository = "https://github.com/Maverick0351a/elaborlog"
+Issues = "https://github.com/Maverick0351a/elaborlog/issues"
+Changelog = "https://github.com/Maverick0351a/elaborlog/blob/main/CHANGELOG.md"
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: System Administrators",
@@ -26,7 +32,7 @@ dependencies = []
 
 [project.optional-dependencies]
 color = ["rich>=13.0.0"]
-dev = ["pytest>=7.4", "coverage>=7.4", "ruff>=0.5.0", "numpy>=1.26.0"]
+dev = ["pytest>=7.4", "coverage>=7.4", "ruff>=0.5.0", "numpy>=1.26.0", "jsonschema>=4.0.0"]
 server = ["fastapi>=0.111.0", "uvicorn[standard]>=0.30.0"]
 
 [project.scripts]

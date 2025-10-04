@@ -1,5 +1,6 @@
 import json
 import math
+import heapq
 from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -45,6 +46,8 @@ class InfoModel:
         self.lines_truncated: int = 0
         self.lines_token_truncated: int = 0
         self.lines_dropped: int = 0
+        # Renormalization counter (numeric stability)
+        self.renormalizations: int = 0
 
     def _prob(self, count: float, total: float, vocab: int) -> float:
         # Apply global scale factor lazily.
@@ -67,24 +70,59 @@ class InfoModel:
                 # Multiply global scale g by decay**steps
                 self.g *= self.cfg.decay ** steps
                 self._last_decay_line += steps * self.decay_every
+        # Numerical stability: if g becomes extremely small, renormalize counts.
+        if self.g < self.cfg.renorm_min_scale:
+            self._renormalize()
+
+    def _renormalize(self) -> None:
+        """Fold global scale factor into stored counts to avoid underflow.
+
+        After renormalization: effective probabilities are unchanged (since we multiply
+        every stored count and both total aggregates by g) but g resets to 1.0.
+        """
+        if self.g == 1.0:
+            return
+        scale = self.g
+        for k in list(self.token_counts.keys()):
+            self.token_counts[k] *= scale
+        for k in list(self.template_counts.keys()):
+            self.template_counts[k] *= scale
+        self.total_tokens *= scale
+        self.total_templates *= scale
+        self.g = 1.0
+        self.renormalizations += 1
 
     def _prune_tokens(self) -> None:
         max_tokens = self.cfg.max_tokens
         if max_tokens <= 0:
             return
-        while len(self.token_counts) > max_tokens:
-            victim = min(self.token_counts, key=self.token_counts.get)
-            removed = self.token_counts.pop(victim)
-            self.total_tokens = max(0.0, self.total_tokens - removed)
+        size = len(self.token_counts)
+        if size <= max_tokens:
+            return
+        # Remove the lowest-frequency tokens in one pass.
+        to_remove = size - max_tokens
+        # nsmallest returns list of (key, count) pairs with smallest counts.
+        victims = heapq.nsmallest(to_remove, self.token_counts.items(), key=lambda kv: kv[1])
+        removed_total = 0.0
+        for key, count in victims:
+            removed_total += count
+            del self.token_counts[key]
+        self.total_tokens = max(0.0, self.total_tokens - removed_total)
 
     def _prune_templates(self) -> None:
         max_templates = self.cfg.max_templates
         if max_templates <= 0:
             return
-        while len(self.template_counts) > max_templates:
-            victim = min(self.template_counts, key=self.template_counts.get)
-            removed = self.template_counts.pop(victim)
-            self.total_templates = max(0.0, self.total_templates - removed)
+        size = len(self.template_counts)
+        if size <= max_templates:
+            return
+        to_remove = size - max_templates
+        victims = heapq.nsmallest(to_remove, self.template_counts.items(), key=lambda kv: kv[1])
+        removed_total = 0.0
+        for key, count in victims:
+            removed_total += count
+            del self.template_counts[key]
+        self.total_templates = max(0.0, self.total_templates - removed_total)
 
     def observe(self, line: str) -> None:
         # Guardrails: truncate very long raw lines
@@ -93,7 +131,12 @@ class InfoModel:
             self.lines_truncated += 1
         # Update counts (unsupervised)
         tpl = to_template(line)
-        toks = tokens(line, include_bigrams=self.cfg.include_bigrams)
+        toks = tokens(
+            line,
+            include_bigrams=self.cfg.include_bigrams,
+            split_camel=self.cfg.split_camel,
+            split_dot=self.cfg.split_dot,
+        )
         if len(toks) > self.cfg.max_tokens_per_line:
             # Keep only first N tokens; drop remainder
             toks = toks[: self.cfg.max_tokens_per_line]
@@ -127,7 +170,12 @@ class InfoModel:
 
     def score(self, line: str, level: Optional[str] = None) -> LineScore:
         tpl = to_template(line)
-        toks = tokens(line, include_bigrams=self.cfg.include_bigrams)
+        toks = tokens(
+            line,
+            include_bigrams=self.cfg.include_bigrams,
+            split_camel=self.cfg.split_camel,
+            split_dot=self.cfg.split_dot,
+        )
         if not toks:
             return LineScore(0.0, 0.0, 0.0, 0.0, 0.0, tpl, toks)
 
@@ -192,6 +240,7 @@ class InfoModel:
             "lines_truncated": self.lines_truncated,
             "lines_token_truncated": self.lines_token_truncated,
             "lines_dropped": self.lines_dropped,
+            "renormalizations": self.renormalizations,
         }
 
     def _apply_snapshot(self, snap: Mapping[str, Any]) -> None:
@@ -205,6 +254,7 @@ class InfoModel:
         self.lines_truncated = int(snap.get("lines_truncated", 0))
         self.lines_token_truncated = int(snap.get("lines_token_truncated", 0))
         self.lines_dropped = int(snap.get("lines_dropped", 0))
+        self.renormalizations = int(snap.get("renormalizations", 0))
 
     def save(self, path: str | Path) -> Path:
         """Persist current state to disk as JSON."""

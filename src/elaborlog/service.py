@@ -18,6 +18,7 @@ except Exception as exc:  # noqa: BLE001
 
 from .parsers import parse_line
 from .score import InfoModel
+from .metrics import model_metrics
 
 
 class ObserveRequest(BaseModel):
@@ -90,6 +91,11 @@ def build_app(model: Optional[InfoModel] = None) -> FastAPI:
                 total_templates=model.total_templates,
                 seen_lines=model._seen_lines,
             )
+
+    @app.get("/metrics")
+    def metrics() -> Dict[str, object]:  # pragma: no cover - covered by dedicated test
+        with lock:
+            return model_metrics(model)
 
     return app
 

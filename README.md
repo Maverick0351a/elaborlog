@@ -1,5 +1,8 @@
 # Elaborlog
 
+![CI](https://github.com/Maverick0351a/elaborlog/actions/workflows/ci.yml/badge.svg) ![Coverage](https://codecov.io/gh/Maverick0351a/elaborlog/branch/main/graph/badge.svg)
+<!-- PyPI badge placeholder: will activate after first release -->
+
 Surface **rare, high‑signal** log lines and explain *why* they matter.
 
 Fast streaming novelty scoring + adaptive quantile alerting + transparent token/template explanations.
@@ -83,6 +86,12 @@ elaborlog tail /var/log/app.log --mode triage --jsonl alerts.jsonl
 ```
 Each JSONL alert includes: novelty, raw score (and component bits), template probability, top token contributors (token, bits, probability, frequency), neighbor lines, quantile meta.
 
+Emit rolling alert rate stats (stderr) every 10s:
+
+```bash
+elaborlog tail /var/log/app.log --stats-interval 10
+```
+
 Batch JSON export:
 
 ```bash
@@ -110,6 +119,7 @@ Endpoints:
 - `POST /observe` – body `{ "line": "..." }` (updates frequencies)
 - `POST /score` – body `{ "line": "..." }` returns scoring fields
 - `GET /stats` – model cardinalities & counters
+- `GET /metrics` – detailed internal metrics (counts, decay scale, renormalizations, guardrail counters)
 
 You can warm start with `--state-in` and enable periodic snapshots with `--state-out` (every 60s by default, adjustable via `--interval`).
 
@@ -179,7 +189,15 @@ Instead of scaling every count each decay step, Elaborlog maintains a *global sc
 - Lazy decay: no vocabulary-wide scans; large vocabularies stay cheap.
 - Guardrails: extreme line/token explosions capped early (tracked in snapshot counters).
 
-## JSON Schemas (informal)
+## JSON Schemas
+
+Machine-readable schemas:
+
+- `schemas/alert.schema.json` (tail alerts JSONL)
+- `schemas/rank.schema.json` (array output from `rank --json`)
+- `schemas/explain.schema.json` (single object from `explain --json`)
+
+Validate with `jsonschema` (installed via dev extras) or any Draft 2020-12 validator. Informal examples below:
 
 Alert JSONL (tail):
 ```jsonc
@@ -204,6 +222,45 @@ Alert JSONL (tail):
 Rank JSON array (`--json`): list of similar objects minus threshold fields.
 
 Explain JSON (`explain --json`): one object plus `weights`.
+
+### Metrics Endpoint
+
+The service exposes `GET /metrics` for observability and health dashboards.
+
+Example (trimmed):
+```jsonc
+{
+	"tokens": 18342,
+	"templates": 6123,
+	"total_tokens": 512340,
+	"total_templates": 176540,
+	"seen_lines": 176540,
+	"g": 0.2243119,
+	"renormalizations": 3,
+	"truncated_lines": 12,
+	"truncated_tokens": 4,
+	"config": {
+		"decay": 0.9999,
+		"max_tokens": 30000,
+		"max_templates": 10000
+	}
+}
+```
+Fields:
+- `g`: current global decay scale factor (lazy decay internal state)
+- `renormalizations`: how many times counts were rescaled to avoid underflow
+- `truncated_lines` / `truncated_tokens`: guardrail activations
+- `total_*` vs current `tokens`/`templates`: decayed vs distinct vocabulary sizes
+
+Use this to alert when `renormalizations` spikes unexpectedly, or when vocabulary approaches caps (`max_tokens`, `max_templates`).
+
+### Benchmark CI Job
+
+A lightweight benchmark runs in CI (Python 3.11) and uploads `bench-result.json`. Treat early numbers as baselines; you can diff artifacts across commits to spot performance regressions.
+
+### Schema Refactor Note
+
+Schemas now employ `$defs` for `tokenContributor` and a timestamp pattern (subset RFC3339). Downstream generators can rely on stable contributor object shape.
 
 ## Roadmap
 

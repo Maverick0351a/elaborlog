@@ -24,9 +24,58 @@ _REPLACERS: List[Tuple[re.Pattern[str], str]] = [
     (re.compile(r"\b\d+\b"), "<num>"),
 ]
 
+# --- Pluggable custom masks -------------------------------------------------
+# Users can supply additional regex -> replacement rules at runtime via CLI.
+# We keep them module-global so both scoring model and lightweight commands
+# (like 'cluster') see the same behavior without needing to thread config
+# everywhere. The CLI resets these per invocation (process scoped).
+_CUSTOM_REPLACERS: List[Tuple[re.Pattern[str], str]] = []
+_CUSTOM_ORDER: str = "before"  # 'before' (default) or 'after'
+
+
+def set_custom_replacers(pairs: List[Tuple[re.Pattern[str], str]], order: str = "before") -> None:
+    """Install custom replacers.
+
+    Parameters
+    ----------
+    pairs: list of (compiled_regex, replacement)
+        Replacement token strings should be short (e.g. <user>, <id>). They are
+        applied verbatim; no further escaping.
+    order: 'before' | 'after'
+        Whether to apply custom masks before the built-in canonicalization
+        rules (default) or after.
+    """
+    global _CUSTOM_REPLACERS, _CUSTOM_ORDER
+    _CUSTOM_REPLACERS = pairs
+    _CUSTOM_ORDER = order if order in {"before", "after"} else "before"
+
+
+def clear_custom_replacers() -> None:
+    """Reset to no custom masks (mainly for tests)."""
+    global _CUSTOM_REPLACERS, _CUSTOM_ORDER
+    _CUSTOM_REPLACERS = []
+    _CUSTOM_ORDER = "before"
+
+
+def _apply(replacers: List[Tuple[re.Pattern[str], str]], text: str) -> str:
+    for pattern, repl in replacers:
+        try:
+            text = pattern.sub(repl, text)
+        except Exception:  # pragma: no cover - defensive; regex failures rare
+            pass
+    return text
+
 
 def to_template(line: str) -> str:
+    """Return canonical template for a raw log line.
+
+    Custom masks (user supplied) run before or after the built-ins depending
+    on configured order. Order can matter for overlapping patterns (e.g. a
+    custom mask targeting digits vs the built-in <num> substitute)."""
     x = line
-    for pattern, repl in _REPLACERS:
-        x = pattern.sub(repl, x)
+    if _CUSTOM_REPLACERS and _CUSTOM_ORDER == "before":
+        x = _apply(_CUSTOM_REPLACERS, x)
+    x = _apply(_REPLACERS, x)
+    if _CUSTOM_REPLACERS and _CUSTOM_ORDER == "after":
+        x = _apply(_CUSTOM_REPLACERS, x)
     return " ".join(x.split())

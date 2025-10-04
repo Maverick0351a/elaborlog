@@ -21,9 +21,14 @@ class ScoringConfig:
     max_templates: int = 10000
     # Tokenization controls
     include_bigrams: bool = False
+    split_camel: bool = False  # split mixedCase / PascalCase tokens into components
+    split_dot: bool = False    # split dotted.identifiers.into parts while retaining original
     # Guardrails
     max_line_length: int = 2000  # characters; lines longer will be truncated
     max_tokens_per_line: int = 400  # tokens after tokenization (before bigrams)
+    # Numerical stability: when lazy global scale factor g shrinks below this
+    # threshold, renormalize by folding g into stored counts and resetting g=1.0.
+    renorm_min_scale: float = 1e-9
 
 
 # Simple severity map; tune as needed

@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 The format is inspired by Keep a Changelog and adheres to semantic-ish versioning while pre-1.0.
 
+## [0.2.1] - 2025-10-04
+### Highlights
+Bench command, multi-quantile alerting, richer tokenization & masking, formal JSON schemas, coverage & stability tooling.
+
+### Added
+- Bench CLI subcommand (`elaborlog bench`) wrapping benchmarking harness.
+- Multi-quantile tail support (`--quantiles`) plus rolling alert rate stats (`--stats-interval`).
+- Custom regex masking (`--mask`, `--mask-order`).
+- CamelCase and dotted token splitting (`--split-camel`, `--split-dot`).
+- JSON Schemas: alert, rank, explain (`schemas/*.schema.json`).
+- Schema validation tests (activated when `jsonschema` installed) in CI via dev extras.
+- Long-run numeric stability test (decay & renormalization invariants).
+- Codecov integration and coverage badge.
+
+### Changed
+- Tail output shows composite thresholds when multiple quantiles supplied.
+- README: new schemas section, stats interval docs, badges.
+
+### Fixed
+- ASCII-safe guardrail summary (removed non-ASCII approx symbol).
+- Correct camelCase splitting while retaining original tokens.
+
+### Migration Notes
+- Non-breaking release: schemas codify existing JSON; no field removals.
+
 ## [0.2.0] - 2025-10-03
 ### Added
 - Streaming P² quantile estimator for tail alerting (default) replacing O(W log W) resort; fallback to window quantile via `--window`.

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Maverick0351a/elaborlog/schemas/alert.schema.json",
+  "title": "Elaborlog Tail Alert",
+  "$defs": {
+    "tokenContributor": {
+      "type": "object",
+      "required": ["token", "prob", "bits", "freq"],
+      "properties": {
+        "token": { "type": "string" },
+        "prob": { "type": "number", "minimum": 0 },
+        "bits": { "type": "number", "minimum": 0 },
+        "freq": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "timestamp": {
+      "type": ["string", "null"],
+      "description": "Original or parsed timestamp if present (subset of RFC3339)",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?(?:Z|[+-]\\d{2}:?\\d{2})$"
+    }
+  },
+  "type": "object",
+  "required": [
+    "novelty", "score", "token_info_bits", "template_info_bits", "level_bonus",
+    "template", "tokens", "token_contributors", "line"
+  ],
+  "properties": {
+    "timestamp": { "$ref": "#/$defs/timestamp" },
+    "level": { "type": ["string", "null"], "description": "Log level (e.g. INFO, WARN)" },
+    "novelty": { "type": "number", "minimum": 0, "maximum": 1 },
+    "score": { "type": "number" },
+    "token_info_bits": { "type": "number" },
+    "template_info_bits": { "type": "number" },
+    "level_bonus": { "type": "number" },
+    "template": { "type": "string" },
+    "template_probability": { "type": "number", "minimum": 0 },
+    "tokens": { "type": "array", "items": { "type": "string" } },
+    "token_contributors": { "type": "array", "items": { "$ref": "#/$defs/tokenContributor" } },
+    "line": { "type": "string" },
+    "threshold": { "type": ["number", "null"], "description": "Current alert threshold" },
+    "quantile": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "neighbors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["similarity", "line"],
+        "properties": {
+          "similarity": { "type": "number", "minimum": 0, "maximum": 1 },
+          "line": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
