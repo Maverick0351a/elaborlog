@@ -4,7 +4,7 @@ Initial quick-win refactor: provide a pluggable interface for emitting alerts.
 Currently used only by tail for JSONL writes; can extend later to webhook, Slack, etc.
 """
 from __future__ import annotations
-from typing import Protocol, Dict, Any, List, Optional
+from typing import Protocol, Dict, Any, List
 
 class AlertSink(Protocol):  # pragma: no cover - simple protocol
     def emit(self, alert: Dict[str, Any]) -> None: ...  # noqa: D401,E701 - protocol stub

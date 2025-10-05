@@ -17,7 +17,7 @@ from .score import InfoModel
 from .templates import set_custom_replacers
 import re
 from .tail import tail
-from .sinks import JsonlSink, MultiSink, AlertSink
+from .sinks import JsonlSink, AlertSink
 from .quantiles import P2Quantile
 from .service import build_app
 
