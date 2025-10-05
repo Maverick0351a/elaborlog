@@ -30,6 +30,10 @@ def test_tail_truncate_and_rotation():
             with p.open("a", encoding="utf-8") as h:
                 h.write("two\n")
                 h.write("three\n")
+            # Allow the consumer thread a brief window to pick up newly appended lines,
+            # especially under slower instrumentation (coverage) where scheduling can delay
+            # the first read iteration.
+            time.sleep(0.05)
             deadline = time.time() + 2.0
             while time.time() < deadline and ("two" not in collected or "three" not in collected):
                 time.sleep(0.01)
