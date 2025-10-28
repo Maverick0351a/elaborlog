@@ -35,7 +35,7 @@ jobs:
           python -m build --wheel --sdist
       - name: Store artifacts
         if: matrix.python-version == '3.11'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: dist
           path: dist/*
@@ -58,7 +58,7 @@ jobs:
           coverage run -m pytest -q
           coverage xml
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: coverage-xml
           path: coverage.xml
@@ -111,7 +111,7 @@ jobs:
             echo "bench-result.json missing" >> $GITHUB_STEP_SUMMARY
           fi
       - name: Upload benchmark artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: bench-result
           path: |
